@@ -431,6 +431,7 @@ export default function App() {
   const [content, setContent] = React.useState([]);
   const [jobs, setJobs] = React.useState([]);
   const [customMessages, setCustomMessages] = React.useState([]);
+  const [dbCustomTypes, setDbCustomTypes] = React.useState([]);
   const [f, setF] = React.useState(null);
 
   // Vault state (Supabase + Google Drive)
@@ -569,6 +570,7 @@ export default function App() {
       supabase.from('content_calendar').select('*').then(({ data }) => data && setContent(data));
       supabase.from('jobs').select('*').then(({ data }) => data && setJobs(data));
       supabase.from('custom_messages').select('*').then(({ data }) => data && setCustomMessages(data));
+      supabase.from('leads_type').select('*').then(({ data, error }) => { if (!error && data) setDbCustomTypes(data.sort((a, b) => a.label.localeCompare(b.label))) });
       supabase.from('vault_categories').select('*').then(({ data }) => data && setDbVaultCategories(data.sort((a, b) => a.label_en.localeCompare(b.label_en))));
     }
     loadData();
@@ -588,6 +590,11 @@ export default function App() {
   const reloadVaultCategories = async () => {
     const { data } = await supabase.from('vault_categories').select('*');
     if (data) setDbVaultCategories(data.sort((a, b) => a.label_en.localeCompare(b.label_en)));
+  };
+
+  const reloadLeadTypes = async () => {
+    const { data } = await supabase.from('leads_type').select('*');
+    if (data) setDbCustomTypes(data.sort((a, b) => a.label.localeCompare(b.label)));
   };
 
   const saveLead = async (d) => {
@@ -611,6 +618,13 @@ export default function App() {
     setModal(null);
   };
   const deleteLead = async (id) => { await supabase.from('leads').delete().eq('id', id); setLeads(p => p.filter(l => l.id !== id)); setModal(null); };
+
+  const deleteCustomType = async (typeLabel) => {
+    if (!window.confirm(`Delete "${typeLabel}"? All leads using it will revert to "${allTypes[0]}".`)) return;
+    await supabase.from('leads').update({ type_key: 0, custom_type: "" }).eq('type_key', 4).eq('custom_type', typeLabel);
+    if (filterType === `custom_${typeLabel}`) setFilterType("all");
+    setLeads(p => p.map(l => (l.type_key === 4 && l.custom_type === typeLabel) ? { ...l, type_key: 0, custom_type: "" } : l));
+  };
   const saveProject = async (d) => {
     // Only send columns that exist in the DB
     const payload = {
@@ -655,8 +669,10 @@ export default function App() {
   React.useEffect(() => { document.documentElement.setAttribute("data-theme", theme); }, [theme]);
 
   const customLeadTypes = React.useMemo(() => {
-    return Array.from(new Set(leads.filter(l => l.type_key === 4 && l.custom_type).map(l => l.custom_type)));
-  }, [leads]);
+    const derived = leads.filter(l => l.type_key === 4 && l.custom_type).map(l => l.custom_type);
+    const db = dbCustomTypes.map(c => c.label);
+    return Array.from(new Set([...derived, ...db]));
+  }, [leads, dbCustomTypes]);
 
   const allTypes = [...t.types];
   const fuClass = (d) => {
@@ -790,6 +806,8 @@ export default function App() {
 
             {tab === "pipeline" && <>
 
+              <button className="btn btn-ghost btn-sm" onClick={() => setModal({ type: "lead_types", data: null })}>Manage Types</button>
+
               <button className="btn btn-ghost btn-sm" onClick={() => setModal({ type: "messages", data: null })}>{t.btn_scripts}</button>
 
               <button className="btn btn-ghost btn-sm" onClick={() => setViewMode(v => v === "table" ? "kanban" : "table")}>{viewMode === "table" ? t.kanban : t.table}</button>
@@ -869,7 +887,7 @@ export default function App() {
               <button className={`filter-chip${filterType === "all" ? " active" : ""}`} onClick={() => setFilterType("all")}>{t.all}</button>
 
               {allTypes.map((tp, i) => <button key={i} className={`filter-chip${filterType === String(i) ? " active" : ""}`} onClick={() => setFilterType(String(i))}>{tp}</button>)}
-              {Array.from(new Set(leads.filter(l => l.type_key === 4 && l.custom_type).map(l => l.custom_type))).map(ct => (
+              {customLeadTypes.map(ct => (
                 <button key={ct} className={`filter-chip${filterType === `custom_${ct}` ? " active" : ""}`} onClick={() => setFilterType(filterType === `custom_${ct}` ? "all" : `custom_${ct}`)}>{ct}</button>
               ))}
 
@@ -1557,6 +1575,8 @@ export default function App() {
 
             {modal.type === "messages" && <MessagesModal t={t} customMessages={customMessages} setCustomMessages={setCustomMessages} onClose={() => setModal(null)} />}
 
+            {modal.type === "lead_types" && <LeadTypesModal dbCustomTypes={dbCustomTypes} customLeadTypes={customLeadTypes} allTypes={allTypes} onDeleteCustomType={deleteCustomType} onReload={reloadLeadTypes} onClose={() => setModal(null)} />}
+
             {modal.type === "vault_item" && <VaultItemModal t={t} data={modal.data} getCategoryLabel={getCategoryLabel} VAULT_CATEGORIES={VAULT_CATEGORIES} onSave={saveVaultItem} onClose={() => setModal(null)} />}
 
             {modal.type === "vault_categories" && <VaultCategoriesModal t={t} dbVaultCategories={dbVaultCategories} onReload={reloadVaultCategories} onClose={() => setModal(null)} />}
@@ -1740,12 +1760,12 @@ function LeadModal({ t, data, allTypes, customLeadTypes, customMessages, onSave,
 
       <button className="btn btn-primary" onClick={() => {
         const payload = { ...f };
-        if (isCustom) {
+        if (isCustom && newType.trim()) {
           payload.type_key = 4;
-          payload.custom_type = newType;
-        } else {
-          payload.custom_type = "";
+          payload.custom_type = newType.trim();
         }
+        // When not isCustom, preserve whatever type_key and custom_type
+        // were already set by the dropdown handler (lines 1632-1643)
         onSave(payload);
       }}>{t.save}</button>
 
@@ -2506,6 +2526,82 @@ function MessagesModal({ t, customMessages, setCustomMessages, onClose }) {
 
   </>;
 
+}
+
+function LeadTypesModal({ dbCustomTypes, customLeadTypes, allTypes, onDeleteCustomType, onReload, onClose }) {
+  const [f, setF] = useState({ id: null, label: "" });
+  const [editMode, setEditMode] = useState(false);
+
+  const saveType = async () => {
+    if (!f.label.trim()) return;
+    const isNew = !f.id;
+    let err;
+    if (isNew) {
+      const { error } = await supabase.from('leads_type').insert([{ label: f.label.trim() }]);
+      err = error;
+    } else {
+      const { error } = await supabase.from('leads_type').update({ label: f.label.trim() }).eq('id', f.id);
+      err = error;
+    }
+    
+    if (err) {
+      alert(`Could not save type. Have you added the "label" column?\n\nError: ${err.message}`);
+      return;
+    }
+    await onReload();
+    setEditMode(false);
+    setF({ id: null, label: "" });
+  };
+
+  const deleteType = async (typeLabel) => {
+    const dbRef = dbCustomTypes.find(d => d.label === typeLabel);
+    if (dbRef) {
+      await supabase.from('leads_type').delete().eq('id', dbRef.id);
+    }
+    onDeleteCustomType(typeLabel);
+    await onReload();
+  };
+
+  return <>
+    <div className="modal-title">Manage Lead Types</div>
+    {editMode ? (
+      <div style={{ animation: "fadeIn 200ms ease" }}>
+        <div className="form-group"><label className="form-label">Type Name</label>
+          <input className="form-input" value={f.label} onChange={e => setF({ ...f, label: e.target.value })} autoFocus />
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={() => setEditMode(false)}>Cancel</button>
+          <button className="btn btn-primary" onClick={saveType}>Save</button>
+        </div>
+      </div>
+    ) : (
+      <div>
+        <button className="btn btn-primary btn-sm" style={{ width: "100%", marginBottom: 15 }} onClick={() => { setF({ id: null, label: "" }); setEditMode(true); }}>
+          + New Type
+        </button>
+        <div className="script-list">
+          {allTypes.map((t, i) => (
+            <div key={`basic_${i}`} className="script-item" style={{ opacity: 0.6 }}>
+              <div className="script-info">
+                <div className="script-name">{t} <span style={{fontSize:10, fontWeight:"normal", marginLeft:6}}>(Default)</span></div>
+              </div>
+            </div>
+          ))}
+          {customLeadTypes.map((ct) => (
+            <div key={`ct_${ct}`} className="script-item">
+              <div className="script-info">
+                <div className="script-name">{ct}</div>
+              </div>
+              <div style={{ display: "flex", gap: 5 }}>
+                <button className="btn btn-danger btn-sm" style={{ padding: "4px 8px" }} onClick={() => deleteType(ct)}>✕</button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="modal-footer"><button className="btn btn-ghost" onClick={onClose}>Close</button></div>
+      </div>
+    )}
+  </>;
 }
 
 function VaultItemModal({ t, data, VAULT_CATEGORIES, getCategoryLabel, onSave, onClose }) {
