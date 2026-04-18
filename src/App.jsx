@@ -511,7 +511,7 @@ export default function App() {
     try {
       // If it's a Drive file, also delete from Drive
       if (item.drive_file_id) {
-        await fetch(`http://localhost:3001/api/files/${item.drive_file_id}`, { method: 'DELETE' }).catch(() => {});
+        await fetch(`http://localhost:3001/api/files/${item.drive_file_id}`, { method: 'DELETE' }).catch(() => { });
       }
       await supabase.from('vault_items').delete().eq('id', item.id);
       setVaultItems(prev => prev.filter(v => v.id !== item.id));
@@ -562,14 +562,14 @@ export default function App() {
   React.useEffect(() => {
     if (!session) return;
     async function loadData() {
-      supabase.from('leads').select('*').then(({data}) => data && setLeads(data));
-      supabase.from('projects').select('*').then(({data}) => data && setProjects(data));
-      supabase.from('partners').select('*').then(({data}) => data && setPartners(data));
-      supabase.from('software_catalog').select('*').then(({data}) => data && setSoftwareCatalog(data));
-      supabase.from('content_calendar').select('*').then(({data}) => data && setContent(data));
-      supabase.from('jobs').select('*').then(({data}) => data && setJobs(data));
-      supabase.from('custom_messages').select('*').then(({data}) => data && setCustomMessages(data));
-      supabase.from('vault_categories').select('*').then(({data}) => data && setDbVaultCategories(data.sort((a,b)=>a.label_en.localeCompare(b.label_en))));
+      supabase.from('leads').select('*').then(({ data }) => data && setLeads(data));
+      supabase.from('projects').select('*').then(({ data }) => data && setProjects(data));
+      supabase.from('partners').select('*').then(({ data }) => data && setPartners(data));
+      supabase.from('software_catalog').select('*').then(({ data }) => data && setSoftwareCatalog(data));
+      supabase.from('content_calendar').select('*').then(({ data }) => data && setContent(data));
+      supabase.from('jobs').select('*').then(({ data }) => data && setJobs(data));
+      supabase.from('custom_messages').select('*').then(({ data }) => data && setCustomMessages(data));
+      supabase.from('vault_categories').select('*').then(({ data }) => data && setDbVaultCategories(data.sort((a, b) => a.label_en.localeCompare(b.label_en))));
     }
     loadData();
   }, [session]);
@@ -587,11 +587,30 @@ export default function App() {
 
   const reloadVaultCategories = async () => {
     const { data } = await supabase.from('vault_categories').select('*');
-    if (data) setDbVaultCategories(data.sort((a,b)=>a.label_en.localeCompare(b.label_en)));
+    if (data) setDbVaultCategories(data.sort((a, b) => a.label_en.localeCompare(b.label_en)));
   };
 
-  const saveLead = async (d) => { if(d.id){ const {data} = await supabase.from('leads').update(d).eq('id', d.id).select().single(); if(data) setLeads(p=>p.map(l=>l.id===d.id?data:l)); } else { const {data} = await supabase.from('leads').insert([d]).select().single(); if(data) setLeads(p=>[...p, data]); } setModal(null); };
-  const deleteLead = async (id) => { await supabase.from('leads').delete().eq('id', id); setLeads(p=>p.filter(l=>l.id!==id)); setModal(null); };
+  const saveLead = async (d) => {
+    if (d.id) {
+      const { data, error } = await supabase.from('leads').update(d).eq('id', d.id).select().single();
+      if (error) {
+        console.error('saveLead update error:', error);
+        alert(`Supabase Error: ${error.message}\n\nPlease ensure you have added a "custom_type" text column in your 'leads' table!`);
+        return;
+      }
+      if (data) setLeads(p => p.map(l => l.id === d.id ? data : l));
+    } else {
+      const { data, error } = await supabase.from('leads').insert([d]).select().single();
+      if (error) {
+        console.error('saveLead insert error:', error);
+        alert(`Supabase Error: ${error.message}\n\nPlease ensure you have added a "custom_type" text column in your 'leads' table!`);
+        return;
+      }
+      if (data) setLeads(p => [...p, data]);
+    }
+    setModal(null);
+  };
+  const deleteLead = async (id) => { await supabase.from('leads').delete().eq('id', id); setLeads(p => p.filter(l => l.id !== id)); setModal(null); };
   const saveProject = async (d) => {
     // Only send columns that exist in the DB
     const payload = {
@@ -605,46 +624,60 @@ export default function App() {
       customTools: d.customTools || {},
       phaseNotes: d.phaseNotes || {},
       selectedTools: d.selectedTools || {},
+      customTasks: d.customTasks || {},
+      customPhases: d.customPhases || null,
     };
     if (d.id) {
       const { data, error } = await supabase.from('projects').update(payload).eq('id', d.id).select().single();
-      if (error) { console.error('saveProject update error:', error); return; }
+      if (error) {
+        console.error('saveProject update error:', error);
+        alert(`Supabase Error: ${error.message}\n\nPlease ensure you have added "customTasks" and "customPhases" as JSONB columns in your 'projects' table!`);
+        return;
+      }
       if (data) setProjects(p => p.map(x => x.id === d.id ? data : x));
     } else {
       const { data, error } = await supabase.from('projects').insert([payload]).select().single();
-      if (error) { console.error('saveProject insert error:', error); return; }
+      if (error) {
+        console.error('saveProject insert error:', error);
+        alert(`Supabase Error: ${error.message}\n\nPlease ensure you have added "customTasks" and "customPhases" as JSONB columns in your 'projects' table!`);
+        return;
+      }
       if (data) setProjects(p => [...p, data]);
     }
     setModal(null);
   };
-  const togglePaid = async (id, idx) => { const proj = projects.find(p=>p.id===id); if(!proj) return; const paid = [...proj.paid]; paid[idx] = !paid[idx]; const {data} = await supabase.from('projects').update({paid}).eq('id', id).select().single(); if(data) setProjects(p=>p.map(x=>x.id===id?data:x)); };
-  const savePartner = async (d) => { if(d.id){ const {data} = await supabase.from('partners').update(d).eq('id', d.id).select().single(); if(data) setPartners(p=>p.map(x=>x.id===d.id?data:x)); } else { const {data} = await supabase.from('partners').insert([d]).select().single(); if(data) setPartners(p=>[...p, data]); } setModal(null); };
-  const deletePartner = async (id) => { await supabase.from('partners').delete().eq('id', id); setPartners(p=>p.filter(x=>x.id!==id)); setModal(null); };
-  const saveContent = async (d) => { if(d.id){ const {data} = await supabase.from('content_calendar').update(d).eq('id', d.id).select().single(); if(data) setContent(p=>p.map(x=>x.id===d.id?data:x)); } else { const {data} = await supabase.from('content_calendar').insert([d]).select().single(); if(data) setContent(p=>[...p, data]); } setModal(null); };
-  const saveJob = async (d) => { if(d.id){ const {data} = await supabase.from('jobs').update(d).eq('id', d.id).select().single(); if(data) setJobs(p=>p.map(x=>x.id===d.id?data:x)); } else { const {data} = await supabase.from('jobs').insert([d]).select().single(); if(data) setJobs(p=>[...p, data]); } setModal(null); };
+  const togglePaid = async (id, idx) => { const proj = projects.find(p => p.id === id); if (!proj) return; const paid = [...proj.paid]; paid[idx] = !paid[idx]; const { data } = await supabase.from('projects').update({ paid }).eq('id', id).select().single(); if (data) setProjects(p => p.map(x => x.id === id ? data : x)); };
+  const savePartner = async (d) => { if (d.id) { const { data } = await supabase.from('partners').update(d).eq('id', d.id).select().single(); if (data) setPartners(p => p.map(x => x.id === d.id ? data : x)); } else { const { data } = await supabase.from('partners').insert([d]).select().single(); if (data) setPartners(p => [...p, data]); } setModal(null); };
+  const deletePartner = async (id) => { await supabase.from('partners').delete().eq('id', id); setPartners(p => p.filter(x => x.id !== id)); setModal(null); };
+  const saveContent = async (d) => { if (d.id) { const { data } = await supabase.from('content_calendar').update(d).eq('id', d.id).select().single(); if (data) setContent(p => p.map(x => x.id === d.id ? data : x)); } else { const { data } = await supabase.from('content_calendar').insert([d]).select().single(); if (data) setContent(p => [...p, data]); } setModal(null); };
+  const saveJob = async (d) => { if (d.id) { const { data } = await supabase.from('jobs').update(d).eq('id', d.id).select().single(); if (data) setJobs(p => p.map(x => x.id === d.id ? data : x)); } else { const { data } = await supabase.from('jobs').insert([d]).select().single(); if (data) setJobs(p => [...p, data]); } setModal(null); };
 
   React.useEffect(() => { document.documentElement.setAttribute("data-theme", theme); }, [theme]);
 
+  const customLeadTypes = React.useMemo(() => {
+    return Array.from(new Set(leads.filter(l => l.type_key === 4 && l.custom_type).map(l => l.custom_type)));
+  }, [leads]);
+
   const allTypes = [...t.types];
   const fuClass = (d) => {
-    if(!d) return "";
+    if (!d) return "";
     const today = new Date().toISOString().split("T")[0];
     if (d < today) return "follow-up-overdue";
-    if (d === today || d === new Date(Date.now()+86400000).toISOString().split("T")[0]) return "follow-up-soon";
+    if (d === today || d === new Date(Date.now() + 86400000).toISOString().split("T")[0]) return "follow-up-soon";
     return "";
   };
   const fuLabel = (d, tStr) => {
-    if(!d) return "";
+    if (!d) return "";
     const today = new Date().toISOString().split("T")[0];
-    if(d < today) {
-       const diff = Math.ceil((new Date(today) - new Date(d)) / (1000*3600*24));
-       return typeof tStr.fu_overdue === 'function' ? tStr.fu_overdue(diff) : "overdue";
+    if (d < today) {
+      const diff = Math.ceil((new Date(today) - new Date(d)) / (1000 * 3600 * 24));
+      return typeof tStr.fu_overdue === 'function' ? tStr.fu_overdue(diff) : "overdue";
     }
     if (d === today) return tStr.fu_today;
-    const diff = Math.ceil((new Date(d) - new Date(today)) / (1000*3600*24));
+    const diff = Math.ceil((new Date(d) - new Date(today)) / (1000 * 3600 * 24));
     return typeof tStr.fu_in === 'function' ? tStr.fu_in(diff) : "soon";
   };
-  
+
   const deleteMessage = async (id) => {
     await supabase.from('custom_messages').delete().eq('id', id);
     setCustomMessages(ms => ms.filter(m => m.id !== id));
@@ -661,11 +694,18 @@ export default function App() {
   const filteredLeads = leads.filter(l => {
     if (search && !l.company.toLowerCase().includes(search.toLowerCase())) return false;
     if (filterStatus !== "all" && String(l.status) !== filterStatus) return false;
-    if (filterType !== "all" && String(l.type_key) !== filterType) return false;
+    if (filterType !== "all") {
+      if (filterType.startsWith("custom_")) {
+        const typeLabel = filterType.replace("custom_", "");
+        if (l.type_key !== 4 || l.custom_type !== typeLabel) return false;
+      } else if (String(l.type_key) !== filterType) {
+        return false;
+      }
+    }
     return true;
-  }).sort((a,b) => {
-    if (sortOrder === "desc") return (b.createdAt||"").localeCompare(a.createdAt||"");
-    return (a.createdAt||"").localeCompare(b.createdAt||"");
+  }).sort((a, b) => {
+    if (sortOrder === "desc") return (b.createdAt || "").localeCompare(a.createdAt || "");
+    return (a.createdAt || "").localeCompare(b.createdAt || "");
   });
 
   if (!session) {
@@ -829,6 +869,9 @@ export default function App() {
               <button className={`filter-chip${filterType === "all" ? " active" : ""}`} onClick={() => setFilterType("all")}>{t.all}</button>
 
               {allTypes.map((tp, i) => <button key={i} className={`filter-chip${filterType === String(i) ? " active" : ""}`} onClick={() => setFilterType(String(i))}>{tp}</button>)}
+              {Array.from(new Set(leads.filter(l => l.type_key === 4 && l.custom_type).map(l => l.custom_type))).map(ct => (
+                <button key={ct} className={`filter-chip${filterType === `custom_${ct}` ? " active" : ""}`} onClick={() => setFilterType(filterType === `custom_${ct}` ? "all" : `custom_${ct}`)}>{ct}</button>
+              ))}
 
             </div>
 
@@ -852,7 +895,7 @@ export default function App() {
 
                         <td><strong>{l.company}</strong></td>
 
-                        <td><span className={`badge ${TYPE_BADGE[l.type_key] || 'badge-custom'}`}>{allTypes[l.type_key]}</span></td>
+                        <td><span className={`badge ${TYPE_BADGE[l.type_key] || 'badge-custom'}`}>{l.type_key === 4 ? (l.custom_type || 'Custom') : allTypes[l.type_key]}</span></td>
 
                         <td style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>{l.contact}</td>
 
@@ -896,7 +939,7 @@ export default function App() {
 
                           <div className="kanban-card-meta">{l.contact}</div>
 
-                          <div className="kanban-card-meta"><span className={`badge ${TYPE_BADGE[l.type_key] || 'badge-custom'}`} style={{ fontSize: 9 }}>{allTypes[l.type_key]}</span></div>
+                          <div className="kanban-card-meta"><span className={`badge ${TYPE_BADGE[l.type_key] || 'badge-custom'}`} style={{ fontSize: 9 }}>{l.type_key === 4 ? (l.custom_type || 'Custom') : allTypes[l.type_key]}</span></div>
 
                           {l.createdAt && <div className="kanban-card-meta" style={{ marginTop: 6, color: "var(--muted)" }}>📅 {l.createdAt}</div>}
 
@@ -926,9 +969,9 @@ export default function App() {
 
             <div className="stats-row stats-grid-3">
 
-              <div className="stat-card"><div className="stat-label">{t.active}</div><div className="stat-value">{projects.filter(p => p.phase < 7).length}</div><div className="stat-sub">{t.in_progress}</div></div>
+              <div className="stat-card"><div className="stat-label">{t.active}</div><div className="stat-value">{projects.filter(p => p.phase < ((p.customPhases || t.project_phases).length - 1)).length}</div><div className="stat-sub">{t.in_progress}</div></div>
 
-              <div className="stat-card"><div className="stat-label">{t.invoiced}</div><div className="stat-value" style={{ color: "var(--won)" }}>{projects.filter(p => p.phase === 7).length}</div><div className="stat-sub">{t.completed}</div></div>
+              <div className="stat-card"><div className="stat-label">{t.invoiced}</div><div className="stat-value" style={{ color: "var(--won)" }}>{projects.filter(p => p.phase >= ((p.customPhases || t.project_phases).length - 1)).length}</div><div className="stat-sub">{t.completed}</div></div>
 
               <div className="stat-card"><div className="stat-label">{t.fully_paid}</div><div className="stat-value">{projects.filter(p => p.paid.every(Boolean)).length}</div><div className="stat-sub">{t.done_label}</div></div>
 
@@ -937,8 +980,10 @@ export default function App() {
             <div className="project-grid">
 
               {projects.map(p => {
+                
+                const prjPhases = p.customPhases || t.project_phases;
 
-                const totalTasks = PHASE_DATA[lang].reduce((sum, ph) => sum + ph.tasks.length, 0);
+                const totalTasks = prjPhases.reduce((sum, ph, pi) => sum + (p.customTasks?.[pi] ? p.customTasks[pi].length : (PHASE_DATA[lang][pi]?.tasks?.length || 0)), 0);
 
                 const doneTasks = p.tasks ? p.tasks.length : 0;
 
@@ -946,53 +991,54 @@ export default function App() {
 
                 return (
 
-                <div key={p.id} className="project-card" onClick={() => setModal({ type: "project", data: p })}>
+                  <div key={p.id} className="project-card" onClick={() => setModal({ type: "project", data: p })}>
 
-                  <div className="project-card-header">
+                    <div className="project-card-header">
 
-                    <div><div className="project-name">{p.name}</div><div className="project-client">{p.client}</div></div>
+                      <div><div className="project-name">{p.name}</div><div className="project-client">{p.client}</div></div>
 
-                    <span className={`funnel-pill ${p.phase === 7 ? "s5" : "s3"}`} style={{ fontSize: 10 }}>{t.project_phases[p.phase]}</span>
+                      <span className={`funnel-pill ${p.phase >= prjPhases.length - 1 ? "s5" : "s3"}`} style={{ fontSize: 10 }}>{prjPhases[p.phase]}</span>
+
+                    </div>
+
+                    <div className="phase-label">{prjPhases[p.phase]}</div>
+
+                    <div className="phase-bar">{prjPhases.map((_, i) => <div key={i} className={`phase-step${i < p.phase ? " done" : i === p.phase ? " current" : ""}`}></div>)}</div>
+
+                    <div className="progress-bar-bg"><div className="progress-bar-fill" style={{ width: `${pct}%`, background: pct === 100 ? "var(--won)" : "var(--accent)" }}></div></div>
+
+                    <div className="progress-pct" style={{ color: pct === 100 ? "var(--won)" : "var(--accent)" }}>{pct}% {lang === "pt" ? "completo" : "complete"}</div>
+
+                    <div className="payment-checks">
+
+                      {t.payment_labels.map((lbl, i) => (
+
+                        <div key={i} className={`payment-check${p.paid[i] ? " paid" : ""}`} onClick={e => { e.stopPropagation(); togglePaid(p.id, i); }}>
+
+                          <div className={`check-box${p.paid[i] ? " checked" : ""}`}>{p.paid[i] ? "✓" : ""}</div>{lbl}
+
+                        </div>
+
+                      ))}
+
+                    </div>
+
+                    <div className="partner-tag" style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
+
+                      {p.partner && p.partner !== "—" && <span>⚡ {p.partner}</span>}
+
+                      {partners.filter(pt => pt.projectId === p.id).map(pt => (
+
+                        <span key={`pt-${pt.id}`}>⚡ {pt.company}</span>
+
+                      ))}
+
+                    </div>
 
                   </div>
 
-                  <div className="phase-label">{t.project_phases[p.phase]}</div>
-
-                  <div className="phase-bar">{t.project_phases.map((_, i) => <div key={i} className={`phase-step${i < p.phase ? " done" : i === p.phase ? " current" : ""}`}></div>)}</div>
-
-                  <div className="progress-bar-bg"><div className="progress-bar-fill" style={{ width: `${pct}%`, background: pct === 100 ? "var(--won)" : "var(--accent)" }}></div></div>
-
-                  <div className="progress-pct" style={{ color: pct === 100 ? "var(--won)" : "var(--accent)" }}>{pct}% {lang === "pt" ? "completo" : "complete"}</div>
-
-                  <div className="payment-checks">
-
-                    {t.payment_labels.map((lbl, i) => (
-
-                      <div key={i} className={`payment-check${p.paid[i] ? " paid" : ""}`} onClick={e => { e.stopPropagation(); togglePaid(p.id, i); }}>
-
-                        <div className={`check-box${p.paid[i] ? " checked" : ""}`}>{p.paid[i] ? "✓" : ""}</div>{lbl}
-
-                      </div>
-
-                    ))}
-
-                  </div>
-
-                  <div className="partner-tag" style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
-
-                    {p.partner && p.partner !== "—" && <span>⚡ {p.partner}</span>}
-
-                    {partners.filter(pt => pt.projectId === p.id).map(pt => (
-
-                      <span key={`pt-${pt.id}`}>⚡ {pt.company}</span>
-
-                    ))}
-
-                  </div>
-
-                </div>
-
-              )})}
+                )
+              })}
 
             </div>
 
@@ -1034,29 +1080,30 @@ export default function App() {
 
                     return (
 
-                    <tr key={p.id} onClick={() => setModal({ type: "partner", data: p })}>
+                      <tr key={p.id} onClick={() => setModal({ type: "partner", data: p })}>
 
-                      <td>
+                        <td>
 
-                        <strong>{p.company}</strong>
+                          <strong>{p.company}</strong>
 
-                        {proj && <div style={{ fontSize: 10, color: "var(--accent2)", marginTop: 4, fontFamily: "var(--font-mono)" }}>⚡ {proj.name}</div>}
+                          {proj && <div style={{ fontSize: 10, color: "var(--accent2)", marginTop: 4, fontFamily: "var(--font-mono)" }}>⚡ {proj.name}</div>}
 
-                      </td>
+                        </td>
 
-                      <td><span className="badge badge-custom">{p.specialty}</span></td>
+                        <td><span className="badge badge-custom">{p.specialty}</span></td>
 
-                      <td style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>{p.contact} <span style={{ color: "var(--muted)", fontSize: 10 }}>{p.phone}</span></td>
+                        <td style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>{p.contact} <span style={{ color: "var(--muted)", fontSize: 10 }}>{p.phone}</span></td>
 
-                      <td style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--accent)" }}>{p.email}</td>
+                        <td style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--accent)" }}>{p.email}</td>
 
-                      <td><span className={`funnel-pill ${STAGE_CLASS[p.status_key === 4 ? 6 : p.status_key]}`}><span className="status-dot" style={{ background: "currentColor" }}></span>{t.partner_statuses[p.status_key]}</span></td>
+                        <td><span className={`funnel-pill ${STAGE_CLASS[p.status_key === 4 ? 6 : p.status_key]}`}><span className="status-dot" style={{ background: "currentColor" }}></span>{t.partner_statuses[p.status_key]}</span></td>
 
-                      <td onClick={e => e.stopPropagation()}><button className="btn btn-ghost btn-sm" onClick={() => setModal({ type: "partner", data: p })}>{t.edit}</button></td>
+                        <td onClick={e => e.stopPropagation()}><button className="btn btn-ghost btn-sm" onClick={() => setModal({ type: "partner", data: p })}>{t.edit}</button></td>
 
-                    </tr>
+                      </tr>
 
-                  )})}
+                    )
+                  })}
 
                 </tbody>
 
@@ -1106,15 +1153,15 @@ export default function App() {
                   <div className="modal-title">{f?.id ? t.edit : t.sw_add}</div>
                   <div className="form-group">
                     <label className="form-label">{t.sw_name_ph}</label>
-                    <input className="form-input" value={f?.id ? f.name : newSw.name} onChange={e => f?.id ? setF({...f, name: e.target.value}) : setNewSw({...newSw, name: e.target.value})} />
+                    <input className="form-input" value={f?.id ? f.name : newSw.name} onChange={e => f?.id ? setF({ ...f, name: e.target.value }) : setNewSw({ ...newSw, name: e.target.value })} />
                   </div>
                   <div className="form-group">
                     <label className="form-label">{t.sw_categories}</label>
-                    <select className="form-select" value={f?.id ? f.category : newSw.category} onChange={e => f?.id ? setF({...f, category: e.target.value}) : setNewSw({...newSw, category: e.target.value})}>
+                    <select className="form-select" value={f?.id ? f.category : newSw.category} onChange={e => f?.id ? setF({ ...f, category: e.target.value }) : setNewSw({ ...newSw, category: e.target.value })}>
                       {SOFTWARE_CATEGORIES.map(k => <option key={k} value={k}>{t.sw_cat_labels[k]}</option>)}
                     </select>
                   </div>
-                  {!f?.id && <div className="form-group"><label className="form-label">Icon</label><input className="form-input" value={newSw.icon} onChange={e => setNewSw(p => ({...p, icon: e.target.value}))} /></div>}
+                  {!f?.id && <div className="form-group"><label className="form-label">Icon</label><input className="form-input" value={newSw.icon} onChange={e => setNewSw(p => ({ ...p, icon: e.target.value }))} /></div>}
                   <div className="modal-footer">
                     <button className="btn btn-ghost" onClick={() => { setAddingSw(false); setF(null); }}>{t.cancel}</button>
                     <button className="btn btn-primary" onClick={async () => {
@@ -1179,15 +1226,15 @@ export default function App() {
                       {toolProjects.length > 0 && (
                         <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--border)", fontSize: 10, color: "var(--muted)", display: "flex", flexDirection: "column", gap: 6 }}>
                           {toolProjects.map(p => {
-                             const usedPhases = Object.entries(p.customTools || {})
-                               .filter(([_, arr]) => arr.includes(sw.name))
-                               .map(([idx, _]) => t.project_phases[idx] || `Fase ${idx}`);
-                             return (
-                               <div key={p.id}>
-                                 <strong style={{ color: "var(--text)", fontWeight: 500 }}>{p.name}</strong>
-                                 <div style={{ color: "var(--muted)", marginTop: 2 }}>{usedPhases.join(" • ")}</div>
-                               </div>
-                             );
+                            const usedPhases = Object.entries(p.customTools || {})
+                              .filter(([_, arr]) => arr.includes(sw.name))
+                              .map(([idx, _]) => t.project_phases[idx] || `Fase ${idx}`);
+                            return (
+                              <div key={p.id}>
+                                <strong style={{ color: "var(--text)", fontWeight: 500 }}>{p.name}</strong>
+                                <div style={{ color: "var(--muted)", marginTop: 2 }}>{usedPhases.join(" • ")}</div>
+                              </div>
+                            );
                           })}
                         </div>
                       )}
@@ -1498,7 +1545,7 @@ export default function App() {
 
           <div className={`modal${modal.type === "project" ? " modal-wide" : ""}`} onClick={e => e.stopPropagation()}>
 
-            {modal.type === "lead" && <LeadModal t={t} data={modal.data} allTypes={allTypes} customMessages={customMessages} onSave={saveLead} onDelete={deleteLead} onClose={() => setModal(null)} />}
+            {modal.type === "lead" && <LeadModal t={t} data={modal.data} allTypes={allTypes} customLeadTypes={customLeadTypes} customMessages={customMessages} onSave={saveLead} onDelete={deleteLead} onClose={() => setModal(null)} />}
 
             {modal.type === "project" && <ProjectModal t={t} lang={lang} data={modal.data} partners={partners} softwareCatalog={softwareCatalog} onSave={saveProject} onClose={() => setModal(null)} />}
 
@@ -1530,7 +1577,7 @@ export default function App() {
 
 // ── MODALS ────────────────────────────────────────────────────────────────────
 
-function LeadModal({ t, data, allTypes, customMessages, onSave, onDelete, onClose }) {
+function LeadModal({ t, data, allTypes, customLeadTypes, customMessages, onSave, onDelete, onClose }) {
 
   const [f, setF] = useState(data || { company: "", type_key: 0, contact: "", phone: "", email: "", linkedin: "", status: 0, followUp: "", notes: "", createdAt: new Date().toISOString().split("T")[0] });
 
@@ -1579,19 +1626,26 @@ function LeadModal({ t, data, allTypes, customMessages, onSave, onDelete, onClos
       <div className="form-group"><label className="form-label">{t.lbl_type}</label>
 
         {!isCustom ? (
-
-          <select className="form-select" value={f.type_key} onChange={e => {
-
-            if (e.target.value === "custom") setIsCustom(true);
-
-            else s("type_key", parseInt(e.target.value));
-
-          }}>
-
+          <select
+            className="form-select"
+            value={f.type_key === 4 && f.custom_type ? `custom_val_${f.custom_type}` : f.type_key}
+            onChange={e => {
+              if (e.target.value === "custom") {
+                setIsCustom(true);
+                setNewType("");
+              } else if (e.target.value.startsWith("custom_val_")) {
+                const val = e.target.value.replace("custom_val_", "");
+                s("type_key", 4);
+                s("custom_type", val);
+              } else {
+                s("type_key", parseInt(e.target.value));
+                s("custom_type", "");
+              }
+            }}
+          >
             {allTypes.map((tp, i) => <option key={i} value={i}>{tp}</option>)}
-
+            {(customLeadTypes || []).map(ct => <option key={ct} value={`custom_val_${ct}`}>{ct}</option>)}
             <option value="custom">{t.add_custom_type}</option>
-
           </select>
 
         ) : (
@@ -1684,7 +1738,16 @@ function LeadModal({ t, data, allTypes, customMessages, onSave, onDelete, onClos
 
       <button className="btn btn-ghost" onClick={onClose}>{t.cancel}</button>
 
-      <button className="btn btn-primary" onClick={() => onSave(f, isCustom ? newType : null)}>{t.save}</button>
+      <button className="btn btn-primary" onClick={() => {
+        const payload = { ...f };
+        if (isCustom) {
+          payload.type_key = 4;
+          payload.custom_type = newType;
+        } else {
+          payload.custom_type = "";
+        }
+        onSave(payload);
+      }}>{t.save}</button>
 
     </div>
 
@@ -1698,9 +1761,9 @@ function ProjectModal({ t, lang, data, partners, softwareCatalog, onSave, onClos
 
   const [f, setF] = useState(() => {
 
-    const base = data || { name: "", client: "", phase: 0, partner: "", assets: "", tasks: [], paid: [false, false, false], phaseNotes: {}, selectedTools: {}, customTools: {} };
+    const base = data || { name: "", client: "", phase: 0, partner: "", assets: "", tasks: [], paid: [false, false, false], phaseNotes: {}, selectedTools: {}, customTools: {}, customTasks: {}, customPhases: null };
 
-    return { ...base, tasks: base.tasks || [], paid: base.paid || [false, false, false], phaseNotes: base.phaseNotes || {}, selectedTools: base.selectedTools || {}, customTools: base.customTools || {} };
+    return { ...base, tasks: base.tasks || [], paid: base.paid || [false, false, false], phaseNotes: base.phaseNotes || {}, selectedTools: base.selectedTools || {}, customTools: base.customTools || {}, customTasks: base.customTasks || {}, customPhases: base.customPhases || null };
 
   });
 
@@ -1812,9 +1875,9 @@ function ProjectModal({ t, lang, data, partners, softwareCatalog, onSave, onClos
 
 
 
-  const phases = PHASE_DATA[lang] || PHASE_DATA.en;
+  const projectPhases = f.customPhases || t.project_phases;
 
-  const totalTasks = phases.reduce((sum, ph) => sum + ph.tasks.length, 0);
+  const totalTasks = projectPhases.reduce((sum, ph, pi) => sum + (f.customTasks[pi] ? f.customTasks[pi].length : ((PHASE_DATA[lang] || PHASE_DATA.en)[pi]?.tasks?.length || 0)), 0);
 
   const doneTasks = f.tasks.length;
 
@@ -1840,7 +1903,7 @@ function ProjectModal({ t, lang, data, partners, softwareCatalog, onSave, onClos
 
         <select className="form-select" value={f.phase} onChange={e => { const v = parseInt(e.target.value); s("phase", v); if (!openPhases.includes(v)) setOpenPhases([...openPhases, v]); }}>
 
-          {t.project_phases.map((p, i) => <option key={i} value={i}>{p}</option>)}
+          {projectPhases.map((p, i) => <option key={i} value={i}>{p}</option>)}
 
         </select>
 
@@ -1872,6 +1935,55 @@ function ProjectModal({ t, lang, data, partners, softwareCatalog, onSave, onClos
 
 
 
+    {/* Phases Editor */}
+    <div style={{ marginBottom: 16 }}>
+      <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+        <span>{lang === 'pt' ? 'Etapas do Projeto' : 'Project Phases'}</span>
+        <select 
+          className="form-select" 
+          style={{ fontSize: 10, padding: "2px 20px 2px 6px", width: "auto", height: "24px", minHeight: "24px", borderRadius: 4 }}
+          value=""
+          onChange={e => {
+             let val = e.target.value;
+             if (!val) return;
+             
+             // If user selects "custom", just add a placeholder phase name they can edit inline!
+             if (val === "custom") {
+                 val = lang === 'pt' ? 'Nova Etapa Customizada' : 'New Custom Phase';
+             }
+             
+             s('customPhases', [...projectPhases, val]);
+          }}
+        >
+          <option value="">+ {lang === 'pt' ? 'Nova Etapa' : 'New Phase'}</option>
+          <optgroup label={lang === 'pt' ? 'Etapas Padrão' : 'Standard Phases'}>
+            {t.project_phases.map((ph, idx) => <option key={idx} value={ph}>{ph}</option>)}
+          </optgroup>
+          <option value="custom" style={{ fontWeight: 'bold' }}>+ {lang === 'pt' ? 'Criar Customizada...' : 'Create Custom...'}</option>
+        </select>
+      </label>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: 8 }}>
+        {projectPhases.map((phName, pi) => (
+          <div key={pi} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <span style={{ fontSize: 10, color: "var(--muted)", width: 14 }}>{pi+1}.</span>
+            <input className="form-input" style={{ flex: 1, padding: "4px 8px", fontSize: 12, height: "auto" }} value={phName} onChange={e => {
+               const newArr = [...projectPhases];
+               newArr[pi] = e.target.value;
+               s('customPhases', newArr);
+            }} />
+            <button className="btn btn-ghost" style={{ color: "var(--danger)", padding: "2px 6px", fontSize: 10 }} onClick={(e) => {
+               e.preventDefault();
+               const newArr = projectPhases.filter((_, i) => i !== pi);
+               s('customPhases', newArr);
+               if (f.phase >= newArr.length) s('phase', Math.max(0, newArr.length - 1));
+            }}>✕</button>
+          </div>
+        ))}
+      </div>
+    </div>
+
+
+
     {/* Overall progress */}
 
     <div style={{ marginBottom: 16 }}>
@@ -1894,13 +2006,15 @@ function ProjectModal({ t, lang, data, partners, softwareCatalog, onSave, onClos
 
     <div style={{ marginBottom: 16 }}>
 
-      {phases.map((phaseData, pi) => {
+      {projectPhases.map((phaseName, pi) => {
 
         const isOpen = openPhases.includes(pi);
 
-        const phaseTasks = phaseData.tasks;
+        const phaseData = (PHASE_DATA[lang] || PHASE_DATA.en)[pi] || { tasks: [], deliverables: "", rule: "" };
 
-        const phaseTasksDone = phaseTasks.filter((_, ti) => f.tasks.includes(`${pi}_${ti}`)).length;
+        const phaseTasks = f.customTasks[pi] || phaseData.tasks.map((t, ti) => ({ id: `${pi}_${ti}`, desc: (typeof t === 'string' ? t : t.desc) || "Task" }));
+
+        const phaseTasksDone = phaseTasks.filter(t => f.tasks.includes(t.id)).length;
 
         const phaseComplete = phaseTasksDone === phaseTasks.length && phaseTasks.length > 0;
 
@@ -1916,7 +2030,7 @@ function ProjectModal({ t, lang, data, partners, softwareCatalog, onSave, onClos
 
               <div className={`phase-acc-num${phaseComplete ? " num-done" : isCurrent ? " num-current" : ""}`}>{phaseComplete ? "✓" : pi + 1}</div>
 
-              <span className="phase-acc-title" style={{ color: isCurrent ? "var(--accent)" : phaseComplete ? "var(--won)" : "var(--muted)" }}>{t.project_phases[pi]}</span>
+              <span className="phase-acc-title" style={{ color: isCurrent ? "var(--accent)" : phaseComplete ? "var(--won)" : "var(--muted)" }}>{phaseName}</span>
 
               <span className="phase-acc-progress">{phaseTasksDone}/{phaseTasks.length}</span>
 
@@ -1930,7 +2044,7 @@ function ProjectModal({ t, lang, data, partners, softwareCatalog, onSave, onClos
 
                 <div className="phase-section-label">{lang === "pt" ? "Tarefas" : "Tasks"}</div>
 
-                  {phaseTasks.map((task, ti) => {
+                {phaseTasks.map((task, ti) => {
 
                   const taskLabel = typeof task === 'string' ? task : task.desc;
 
@@ -2441,10 +2555,10 @@ function VaultCategoriesModal({ t, dbVaultCategories, onReload, onClose }) {
     {editMode ? (
       <div style={{ animation: "fadeIn 200ms ease" }}>
         <div className="form-group"><label className="form-label">Key ID (e.g. DesignFiles)</label>
-          <input className="form-input" value={f.key} onChange={e => setF({...f, key: e.target.value.replace(/\s+/g, '')})} disabled={!!f.id} />
+          <input className="form-input" value={f.key} onChange={e => setF({ ...f, key: e.target.value.replace(/\s+/g, '') })} disabled={!!f.id} />
         </div>
-        <div className="form-group"><label className="form-label">Label (EN)</label><input className="form-input" value={f.label_en} onChange={e => setF({...f, label_en: e.target.value})} /></div>
-        <div className="form-group"><label className="form-label">Label (PT)</label><input className="form-input" value={f.label_pt} onChange={e => setF({...f, label_pt: e.target.value})} /></div>
+        <div className="form-group"><label className="form-label">Label (EN)</label><input className="form-input" value={f.label_en} onChange={e => setF({ ...f, label_en: e.target.value })} /></div>
+        <div className="form-group"><label className="form-label">Label (PT)</label><input className="form-input" value={f.label_pt} onChange={e => setF({ ...f, label_pt: e.target.value })} /></div>
         <div className="modal-footer">
           <button className="btn btn-ghost" onClick={() => setEditMode(false)}>{t.cancel || "Cancel"}</button>
           <button className="btn btn-primary" onClick={saveCat}>{t.save || "Save"}</button>
